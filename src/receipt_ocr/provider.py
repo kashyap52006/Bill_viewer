@@ -5,15 +5,13 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
-from dotenv import load_dotenv
 from google import genai
 from google.genai import errors as genai_errors
 
 from .errors import ConfigurationError, ImageError, ProviderError
 from .prompts import SYSTEM_PROMPT, USER_PROMPT
 
-load_dotenv()
-
+from .config import get_settings
 
 class LLMProvider(ABC):
     @abstractmethod
@@ -33,7 +31,10 @@ class MyAIProvider(LLMProvider):
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
     ):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        settings = get_settings()
+
+        self.api_key = api_key or settings.gemini_api_key
+
         if not self.api_key:
             raise ConfigurationError("GEMINI_API_KEY is required.")
 
