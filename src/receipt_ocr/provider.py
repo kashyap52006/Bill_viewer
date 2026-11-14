@@ -12,6 +12,7 @@ from .errors import ConfigurationError, ImageError, ProviderError
 from .prompts import SYSTEM_PROMPT, USER_PROMPT
 
 from .config import get_settings
+from .image_preprocessor import ImagePreprocessor
 
 class LLMProvider(ABC):
     @abstractmethod
