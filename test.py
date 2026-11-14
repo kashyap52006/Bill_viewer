@@ -2,12 +2,12 @@
 import json
 import sys
 
-from src.receipt_ocr.main_processor import MainProcessor
-from src.receipt_ocr.errors import ReceiptOCRError
+from receipt_ocr.main_processor import MainProcessor
+from receipt_ocr.errors import ReceiptOCRError
 
 
 # Define the expected receipt output.
-from src.receipt_ocr.schemas import RECEIPT_SCHEMA
+from receipt_ocr.schemas import RECEIPT_SCHEMA
 
 
 def main():
