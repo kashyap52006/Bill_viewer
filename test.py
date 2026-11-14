@@ -1,7 +1,9 @@
 
 import json
+import sys
 
 from src.receipt_ocr.main_processor import MainProcessor
+from src.receipt_ocr.errors import ReceiptOCRError
 
 
 # Define the expected receipt output.
@@ -66,4 +68,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ReceiptOCRError as error:
+        print(f"Receipt processing failed: {error}", file=sys.stderr)
+        raise SystemExit(1) from error

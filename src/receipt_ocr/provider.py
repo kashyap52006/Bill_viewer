@@ -7,13 +7,13 @@ from typing import Any, Mapping, Optional, Union
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import errors as genai_errors
 
+from .errors import ConfigurationError, ImageError, ProviderError
 from .prompts import SYSTEM_PROMPT, USER_PROMPT
 
 load_dotenv()
 
-from dotenv import load_dotenv
-load_dotenv()  # Load environment variables from .env file
 
 class LLMProvider(ABC):
     @abstractmethod
@@ -35,17 +35,22 @@ class MyAIProvider(LLMProvider):
     ):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY is required.")
+            raise ConfigurationError("GEMINI_API_KEY is required.")
 
         self.base_url = base_url
         http_options = genai.types.HttpOptions(
             api_version="v1beta",
             base_url=self.base_url,
         )
-        self.client = genai.Client(
-            api_key=self.api_key,
-            http_options=http_options,
-        )
+        try:
+            self.client = genai.Client(
+                api_key=self.api_key,
+                http_options=http_options,
+            )
+        except (TypeError, ValueError) as error:
+            raise ConfigurationError(
+                "Unable to initialize the Gemini client. Check its configuration."
+            ) from error
 
     def get_response(
         self,
@@ -56,11 +61,15 @@ class MyAIProvider(LLMProvider):
     ) -> Any:
         selected_model = model or os.getenv("DEFAULT_MODEL")
         if not selected_model:
-            raise ValueError("A model is required through the model argument or DEFAULT_MODEL.")
+            raise ConfigurationError(
+                "A model is required through the model argument or DEFAULT_MODEL."
+            )
+        if not isinstance(json_schema, Mapping) or not json_schema:
+            raise ConfigurationError("json_schema must be a non-empty mapping.")
 
         response_format = response_format or "json_schema"
         if response_format not in {"json_object", "json_schema", "text"}:
-            raise ValueError(
+            raise ConfigurationError(
                 "Invalid response_format. Expected 'json_object', "
                 "'json_schema', or 'text'."
             )
@@ -78,18 +87,28 @@ class MyAIProvider(LLMProvider):
         if response_format == "json_schema":
             config["response_schema"] = dict(json_schema)
 
-        return self.client.models.generate_content(
-            model=selected_model,
-            contents=[
-                USER_PROMPT,
-                genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-            ],
-            config=genai.types.GenerateContentConfig(**config),
-        )
+        try:
+            return self.client.models.generate_content(
+                model=selected_model,
+                contents=[
+                    USER_PROMPT,
+                    genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                ],
+                config=genai.types.GenerateContentConfig(**config),
+            )
+        except genai_errors.APIError as error:
+            raise ProviderError(
+                f"Gemini request failed ({error.code}): {error.message}"
+            ) from error
+        except (TypeError, ValueError) as error:
+            raise ProviderError("Unable to create the Gemini request.") from error
 
     @staticmethod
     def _read_image(image: Union[str, bytes]) -> tuple[bytes, str]:
         if isinstance(image, bytes):
+            if not image:
+                raise ImageError("Image data cannot be empty.")
+
             mime_type = {
                 b"\x89PNG\r\n\x1a\n": "image/png",
                 b"\xff\xd8\xff": "image/jpeg",
@@ -100,11 +119,14 @@ class MyAIProvider(LLMProvider):
             for signature, detected_type in mime_type.items():
                 if image.startswith(signature):
                     return image, detected_type
-            raise ValueError("Unsupported or unrecognized image bytes.")
+            raise ImageError("Unsupported or unrecognized image bytes.")
+
+        if not isinstance(image, (str, os.PathLike)):
+            raise ImageError("Image must be a file path or bytes.")
 
         path = Path(image)
         if not path.is_file():
-            raise FileNotFoundError(f"Image file does not exist: {path}")
+            raise ImageError(f"Image file does not exist: {path}")
 
         mime_type = {
             ".jpg": "image/jpeg",
@@ -114,6 +136,14 @@ class MyAIProvider(LLMProvider):
             ".gif": "image/gif",
         }.get(path.suffix.lower())
         if mime_type is None:
-            raise ValueError(f"Unsupported image type: {path.suffix or '<none>'}")
+            raise ImageError(f"Unsupported image type: {path.suffix or '<none>'}")
 
-        return path.read_bytes(), mime_type
+        try:
+            image_bytes = path.read_bytes()
+        except OSError as error:
+            raise ImageError(f"Unable to read image file: {path}") from error
+
+        if not image_bytes:
+            raise ImageError(f"Image file is empty: {path}")
+
+        return image_bytes, mime_type

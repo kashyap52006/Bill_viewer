@@ -3,6 +3,7 @@
 
 from typing import Any, Dict, Optional
 
+from .errors import ConfigurationError, ResponseError
 from .provider import LLMProvider, MyAIProvider
 from .parser import DefaultParser
 
@@ -24,7 +25,7 @@ class MainProcessor:
         response_format: Optional[str] = None,
     ) -> Dict[str, Any]:
         if response_format == "text":
-            raise ValueError("MainProcessor requires a JSON response format.")
+            raise ConfigurationError("MainProcessor requires a JSON response format.")
 
         response = self.provider.get_response(
             image=image_path,
@@ -32,9 +33,14 @@ class MainProcessor:
             model=model,
             response_format=response_format,
         )
-        content = response.text
 
-        if content is None:
-            raise ValueError("No content found in the response.")
+        try:
+            content = response.text
+        except AttributeError as error:
+            raise ResponseError("The provider returned an invalid response object.") from error
+
+        if not isinstance(content, str) or not content.strip():
+            raise ResponseError("The provider returned no usable content.")
+
         return self.parser.parse_response(content)
 
