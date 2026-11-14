@@ -3,8 +3,8 @@
 
 from typing import Any, Dict, Optional
 
-from receipt_ocr.provider import LLMProvider, MyAIProvider
-from receipt_ocr.parser import DefaultParser
+from .provider import LLMProvider, MyAIProvider
+from .parser import DefaultParser
 
 
 class MainProcessor:

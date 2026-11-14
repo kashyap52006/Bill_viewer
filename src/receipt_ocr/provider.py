@@ -5,10 +5,15 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
+from dotenv import load_dotenv
 from google import genai
 
 from .prompts import SYSTEM_PROMPT, USER_PROMPT
 
+load_dotenv()
+
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
 
 class LLMProvider(ABC):
     @abstractmethod
@@ -33,10 +38,9 @@ class MyAIProvider(LLMProvider):
             raise ValueError("GEMINI_API_KEY is required.")
 
         self.base_url = base_url
-        http_options = (
-            genai.types.HttpOptions(base_url=self.base_url)
-            if self.base_url
-            else None
+        http_options = genai.types.HttpOptions(
+            api_version="v1beta",
+            base_url=self.base_url,
         )
         self.client = genai.Client(
             api_key=self.api_key,
