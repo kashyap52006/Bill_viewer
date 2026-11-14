@@ -38,6 +38,8 @@ class MyAIProvider(LLMProvider):
         if not self.api_key:
             raise ConfigurationError("GEMINI_API_KEY is required.")
 
+        self.default_model = settings.default_model
+
         self.base_url = base_url
         http_options = genai.types.HttpOptions(
             api_version="v1beta",
@@ -60,7 +62,7 @@ class MyAIProvider(LLMProvider):
         model: Optional[str] = None,
         response_format: Optional[str] = None,
     ) -> Any:
-        selected_model = model or os.getenv("DEFAULT_MODEL")
+        selected_model = model or self.default_model
         if not selected_model:
             raise ConfigurationError(
                 "A model is required through the model argument or DEFAULT_MODEL."
