@@ -1,7 +1,9 @@
 
 
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
+
+from pathlib import Path
 
 from .errors import ConfigurationError, ResponseError
 from .provider import LLMProvider, MyAIProvider
@@ -19,7 +21,7 @@ class MainProcessor:
 
     def process_receipt(
         self,
-        image_path: str,
+        image_path: Union[str, Path, bytes],
         json_schema: Dict[str, Any],
         model: Optional[str] = None,
         response_format: Optional[str] = None,

@@ -13,6 +13,10 @@ license = { file = "LICENSE" }
 dependencies = [
     "google-genai",
     "python-dotenv",
+    "Pillow",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
 ]
 
 [project.scripts]

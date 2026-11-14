@@ -1,24 +1,24 @@
-
 import json
-import os
 from abc import ABC, abstractmethod
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
+from PIL import Image
 from google import genai
 from google.genai import errors as genai_errors
 
+from .config import get_settings
 from .errors import ConfigurationError, ImageError, ProviderError
+from .image_preprocessor import ImagePreprocessor
 from .prompts import SYSTEM_PROMPT, USER_PROMPT
 
-from .config import get_settings
-from .image_preprocessor import ImagePreprocessor
 
 class LLMProvider(ABC):
     @abstractmethod
     def get_response(
         self,
-        image: Union[str, bytes],
+        image: Union[str, Path, bytes],
         json_schema: Mapping[str, Any],
         model: Optional[str] = None,
         response_format: Optional[str] = None,
@@ -27,11 +27,13 @@ class LLMProvider(ABC):
 
 
 class MyAIProvider(LLMProvider):
+
     def __init__(
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
     ):
+        self.image_preprocessor = ImagePreprocessor()
         settings = get_settings()
 
         self.api_key = api_key or settings.gemini_api_key
@@ -56,9 +58,55 @@ class MyAIProvider(LLMProvider):
                 "Unable to initialize the Gemini client. Check its configuration."
             ) from error
 
+        
+    
+    def _read_image(
+            self,
+            image: Union[str, Path, bytes],
+        ) -> tuple[bytes, str]:
+
+        if isinstance(image, bytes):
+            if not image:
+                raise ImageError("Image data cannot be empty.")
+
+            image_bytes = image
+
+        else:
+            path = Path(image)
+
+            if not path.is_file():
+                raise ImageError(f"Image file does not exist: {path}")
+
+            try:
+                image_bytes = path.read_bytes()
+            except OSError as error:
+                raise ImageError(
+                    f"Unable to read image file: {path}"
+                ) from error
+
+            if not image_bytes:
+                raise ImageError(f"Image file is empty: {path}")
+
+        # Validate and identify the image using Pillow.
+        try:
+            from PIL import Image
+            from io import BytesIO
+
+            with Image.open(BytesIO(image_bytes)) as img:
+                mime_type = Image.MIME.get(img.format)
+
+        except Exception as error:
+            raise ImageError("Unsupported or invalid image.") from error
+
+        if not mime_type:
+            raise ImageError("Unable to identify image format.")
+
+        return image_bytes, mime_type
+
+
     def get_response(
         self,
-        image: Union[str, bytes],
+        image: Union[str, Path, bytes],
         json_schema: Mapping[str, Any],
         model: Optional[str] = None,
         response_format: Optional[str] = None,
@@ -79,6 +127,10 @@ class MyAIProvider(LLMProvider):
             )
 
         image_bytes, mime_type = self._read_image(image)
+        image_bytes, mime_type = self.image_preprocessor.preprocess(
+            image_bytes
+        )
+
         system_prompt = SYSTEM_PROMPT.format(
             json_schema_content=json.dumps(json_schema, indent=2),
         )
@@ -107,47 +159,4 @@ class MyAIProvider(LLMProvider):
         except (TypeError, ValueError) as error:
             raise ProviderError("Unable to create the Gemini request.") from error
 
-    @staticmethod
-    def _read_image(image: Union[str, bytes]) -> tuple[bytes, str]:
-        if isinstance(image, bytes):
-            if not image:
-                raise ImageError("Image data cannot be empty.")
-
-            mime_type = {
-                b"\x89PNG\r\n\x1a\n": "image/png",
-                b"\xff\xd8\xff": "image/jpeg",
-                b"RIFF": "image/webp",
-                b"GIF87a": "image/gif",
-                b"GIF89a": "image/gif",
-            }
-            for signature, detected_type in mime_type.items():
-                if image.startswith(signature):
-                    return image, detected_type
-            raise ImageError("Unsupported or unrecognized image bytes.")
-
-        if not isinstance(image, (str, os.PathLike)):
-            raise ImageError("Image must be a file path or bytes.")
-
-        path = Path(image)
-        if not path.is_file():
-            raise ImageError(f"Image file does not exist: {path}")
-
-        mime_type = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".webp": "image/webp",
-            ".gif": "image/gif",
-        }.get(path.suffix.lower())
-        if mime_type is None:
-            raise ImageError(f"Unsupported image type: {path.suffix or '<none>'}")
-
-        try:
-            image_bytes = path.read_bytes()
-        except OSError as error:
-            raise ImageError(f"Unable to read image file: {path}") from error
-
-        if not image_bytes:
-            raise ImageError(f"Image file is empty: {path}")
-
-        return image_bytes, mime_type
+    
